@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Šiukšlių rūšiavimo žaidimas</title>
+
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  overflow:hidden;
+  font-family:Arial, sans-serif;
+  background:#e6f7ff;
+}
+canvas{display:block}
+
+#hud{
+  position:fixed;
+  top:10px;
+  left:50%;
+  transform:translateX(-50%);
+  background:#fff;
+  padding:10px 14px;
+  border-radius:12px;
+  box-shadow:0 6px 20px rgba(0,0,0,.2);
+  display:flex;
+  gap:14px;
+  font-weight:700;
+  z-index:10;
+}
+
+#records{
+  position:fixed;
+  right:10px;
+  top:10px;
+  background:#fff;
+  padding:10px;
+  border-radius:12px;
+  box-shadow:0 6px 20px rgba(0,0,0,.2);
+  font-size:14px;
+  z-index:10;
+}
+</style>
+</head>
+
+<body>
+
+<div id="hud">
+  <div>Taškai: <span id="score">0</span></div>
+  <div>Laikas: <span id="time">60</span>s</div>
+  <div id="lives">❤️❤️❤️</div>
+</div>
+
+<div id="records">
+  <b>🏆 Rekordai</b>
+  <ol id="recordList"></ol>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+function resize(){
+  canvas.width=innerWidth;
+  canvas.height=innerHeight;
+}
+addEventListener("resize",resize);
+resize();
+
+let score=0, time=60, lives=3;
+let current=null, lastSpawn=0, spawnTime=0;
+
+const bins=[
+  {k:"stiklas",c:"#4caf50",l:"Stiklas"},
+  {k:"popierius",c:"#2196f3",l:"Popierius"},
+  {k:"plastikas",c:"#ffeb3b",l:"Plastikas"},
+  {k:"organika",c:"#8d6e63",l:"Organinės"},
+  {k:"elektronika",c:"#9e9e9e",l:"Elektronika"},
+  {k:"nerus",c:"#f44336",l:"Nerūš."},
+];
+
+const icons={
+  stiklas:"🥛",
+  popierius:"📄",
+  plastikas:"🧴",
+  organika:"🍌",
+  elektronika:"🔋",
+  nerus:"🗑️"
+};
+
+const AC=window.AudioContext||window.webkitAudioContext;
+const audio=new AC();
+const gain=audio.createGain();
+gain.gain.value=0.15;
+gain.connect(audio.destination);
+
+function beep(freq,duration){
+  const o=audio.createOscillator();
+  o.frequency.value=freq;
+  o.connect(gain);
+  o.start();
+  o.stop(audio.currentTime+duration);
+}
+
+function drawHero(t){
+  ctx.save();
+  ctx.translate(canvas.width/2,100+Math.sin(t/400)*4);
+
+  ctx.fillStyle="#ffd54f";
+  ctx.beginPath();
+  ctx.arc(0,-40,30,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle="#000";
+  ctx.beginPath();
+  ctx.arc(-8,-45,3,0,Math.PI*2);
+  ctx.arc(8,-45,3,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle="#000";
+  ctx.beginPath();
+  ctx.arc(0,-38,12,0,Math.PI);
+  ctx.stroke();
+
+  ctx.fillStyle="#fff";
+  ctx.fillRect(-45,0,90,80);
+
+  ctx.strokeStyle="#1976d2";
+  ctx.lineWidth=6;
+  ctx.beginPath();
+  ctx.moveTo(45,20);
+  ctx.lineTo(70+Math.sin(t/200)*12,-10);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawBins(){
+  const h=100;
+  const w=canvas.width/bins.length;
+  bins.forEach((b,i)=>{
+    ctx.fillStyle=b.c;
+    ctx.fillRect(i*w,canvas.height-h,w,h);
+    ctx.fillStyle="#000";
+    ctx.fillText(b.l,i*w+10,canvas.height-10);
+  });
+}
+
+function spawn(){
+  const keys=Object.keys(icons);
+  const k=keys[Math.floor(Math.random()*keys.length)];
+  current={k,x:canvas.width/2,y:140,v:3};
+  spawnTime=performance.now();
+}
+
+canvas.addEventListener("pointerdown",e=>{
+  audio.resume();
+  if(!current) return;
+  const w=canvas.width/bins.length;
+  const i=Math.floor(e.clientX/w);
+
+  if(bins[i].k===current.k){
+    score++;
+    beep(800,0.1);
+  }else{
+    lives--;
+    beep(200,0.2);
+  }
+  current=null;
+  updateHUD();
+});
+
+const scoreEl=document.getElementById("score");
+const livesEl=document.getElementById("lives");
+const timeEl=document.getElementById("time");
+
+function updateHUD(){
+  scoreEl.textContent=score;
+  livesEl.textContent="❤️".repeat(lives);
+}
+
+function saveRecord(s){
+  let r=JSON.parse(localStorage.getItem("records")||"[]");
+  r.push(s);
+  r=r.sort((a,b)=>b-a).slice(0,5);
+  localStorage.setItem("records",JSON.stringify(r));
+}
+
+function loadRecords(){
+  const list=document.getElementById("recordList");
+  list.innerHTML="";
+  JSON.parse(localStorage.getItem("records")||"[]").forEach(v=>{
+    const li=document.createElement("li");
+    li.textContent=v;
+    list.appendChild(li);
+  });
+}
+
+setInterval(()=>{
+  time--;
+  timeEl.textContent=time;
+  if(time<=0||lives<=0){
+    saveRecord(score);
+    alert("Žaidimas baigtas! Taškai: "+score);
+    location.reload();
+  }
+},1000);
+
+function loop(t){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawHero(t);
+  drawBins();
+
+  if(!current && t-lastSpawn>1200){
+    spawn();
+    lastSpawn=t;
+  }
+
+  if(current){
+    current.y+=current.v;
+    ctx.font="40px serif";
+    ctx.fillText(icons[current.k],current.x,current.y);
+
+    if(t-spawnTime>5000 || current.y>canvas.height-110){
+      lives--;
+      current=null;
+      updateHUD();
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+updateHUD();
+loadRecords();
+requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
